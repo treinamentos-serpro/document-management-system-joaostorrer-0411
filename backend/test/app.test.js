@@ -49,7 +49,7 @@ async function upload(userId, token, filename, content) {
   });
 }
 
-test('protege documentos, aplica cotas e impede traversal via ID e nome', async () => {
+test('protege documentos, aplica cotas e impede traversal via ID e nome', async (t) => {
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -69,37 +69,95 @@ test('protege documentos, aplica cotas e impede traversal via ID e nome', async 
   });
   assert.equal(mismatchedIdentity.status, 401);
 
-  const initialList = await fetch(`${baseUrl}/documents`, {
-    headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+  await t.test('GET /documents retorna lista vazia e paginação padrão', async () => {
+    const response = await fetch(`${baseUrl}/documents`, {
+      headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      documents: [],
+      pagination: { limit: 50, offset: 0, total: 0 },
+    });
   });
-  assert.equal(initialList.status, 200);
-  assert.deepEqual((await initialList.json()).documents, []);
 
-  const uploaded = await upload(
-    'alice',
-    'alice-token-for-integration-tests-0001',
-    '../../secret.txt',
-    'conteudo protegido'
-  );
-  assert.equal(uploaded.status, 201);
-  const { document } = await uploaded.json();
-  assert.equal(document.originalName, 'secret.txt');
-  assert.equal(document.owner, 'alice');
-  assert.equal(Object.hasOwn(document, 'storagePath'), false);
-
-  const aliceList = await fetch(`${baseUrl}/documents?limit=1&offset=0`, {
-    headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+  let document;
+  await t.test('POST /upload grava o arquivo localmente e retorna metadados públicos', async () => {
+    const response = await upload(
+      'alice',
+      'alice-token-for-integration-tests-0001',
+      '../../secret.txt',
+      'conteudo protegido'
+    );
+    assert.equal(response.status, 201);
+    ({ document } = await response.json());
+    assert.deepEqual(Object.keys(document).sort(), [
+      'id', 'originalName', 'owner', 'size', 'uploadedAt',
+    ]);
+    assert.match(document.id, /^[0-9a-f-]{36}$/i);
+    assert.equal(document.originalName, 'secret.txt');
+    assert.equal(document.owner, 'alice');
+    assert.equal(document.size, Buffer.byteLength('conteudo protegido'));
+    assert.equal(new Date(document.uploadedAt).toISOString(), document.uploadedAt);
+    const storedFiles = fs.readdirSync(storageDirectory);
+    assert.equal(storedFiles.length, 1);
+    assert.equal(
+      fs.readFileSync(path.join(storageDirectory, storedFiles[0]), 'utf8'),
+      'conteudo protegido'
+    );
   });
-  const listBody = await aliceList.json();
-  assert.equal(listBody.pagination.total, 1);
-  assert.equal(listBody.documents[0].id, document.id);
 
-  const download = await fetch(`${baseUrl}/documents/${document.id}/download`, {
-    headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+  await t.test('GET /documents lista metadados e respeita limit e offset', async () => {
+    const response = await fetch(`${baseUrl}/documents?limit=1&offset=0`, {
+      headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      documents: [document],
+      pagination: { limit: 1, offset: 0, total: 1 },
+    });
+
+    const nextPage = await fetch(`${baseUrl}/documents?limit=1&offset=1`, {
+      headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+    });
+    assert.equal(nextPage.status, 200);
+    assert.deepEqual(await nextPage.json(), {
+      documents: [],
+      pagination: { limit: 1, offset: 1, total: 1 },
+    });
   });
-  assert.equal(download.status, 200);
-  assert.match(download.headers.get('content-disposition'), /attachment/);
-  assert.equal(await download.text(), 'conteudo protegido');
+
+  await t.test('GET /documents rejeita paginação inválida', async () => {
+    for (const query of ['limit=0', 'limit=101', 'limit=abc', 'offset=-1', 'offset=1.5']) {
+      const response = await fetch(`${baseUrl}/documents?${query}`, {
+        headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+      });
+      assert.equal(response.status, 400, query);
+      assert.equal((await response.json()).error.code, 'INVALID_REQUEST', query);
+    }
+  });
+
+  await t.test('GET /documents/:id/download retorna conteúdo e nome do arquivo', async () => {
+    const response = await fetch(`${baseUrl}/documents/${document.id}/download`, {
+      headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-disposition'), /attachment; filename="secret.txt"/);
+    assert.equal(Number(response.headers.get('content-length')), document.size);
+    assert.equal(await response.text(), 'conteudo protegido');
+  });
+
+  await t.test('GET /documents/:id/download rejeita IDs inválidos ou inexistentes', async () => {
+    for (const [id, status, code] of [
+      ['invalid-id', 400, 'INVALID_REQUEST'],
+      [crypto.randomUUID(), 404, 'DOCUMENT_NOT_FOUND'],
+    ]) {
+      const response = await fetch(`${baseUrl}/documents/${id}/download`, {
+        headers: headers('alice', 'alice-token-for-integration-tests-0001'),
+      });
+      assert.equal(response.status, status);
+      assert.equal((await response.json()).error.code, code);
+    }
+  });
 
   const otherOwnerDownload = await fetch(`${baseUrl}/documents/${document.id}/download`, {
     headers: headers('bob', 'bob-token-for-integration-tests-00002'),
@@ -146,6 +204,7 @@ test('protege documentos, aplica cotas e impede traversal via ID e nome', async 
     body: new FormData(),
   });
   assert.equal(missingFile.status, 400);
+  assert.equal((await missingFile.json()).error.code, 'FILE_REQUIRED');
 
   const secondMissingFile = await fetch(`${baseUrl}/upload`, {
     method: 'POST',
@@ -168,6 +227,7 @@ test('protege documentos, aplica cotas e impede traversal via ID e nome', async 
     'x'.repeat(1025)
   );
   assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, 'FILE_TOO_LARGE');
 
   const orphanedFile = path.join(storageDirectory, crypto.randomUUID());
   fs.writeFileSync(orphanedFile, 'orphan');

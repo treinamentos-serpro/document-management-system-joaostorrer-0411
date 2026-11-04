@@ -31,7 +31,25 @@
 
 </div>
 
+## Integração contínua e testes
+
+O workflow [CI](.github/workflows/ci.yml) roda em todo `push` e `pull_request`
+com Node.js 24. Ele instala as dependências usando os lockfiles, builda o
+frontend e executa os testes do backend.
+
+Para executar as mesmas verificações localmente:
+
+```sh
+npm ci --prefix backend
+npm ci --prefix frontend
+npm run build --prefix frontend
+npm test --prefix backend
+```
+
+Os testes de integração verificam upload, listagem com paginação e download,
+incluindo autenticação, isolamento por usuário, cotas e entradas inválidas.
+Os arquivos de teste usam um diretório temporário removido ao final da execução.
+
 ---
 
 &copy; 2025 GitHub &bull; [Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md) &bull; [MIT License](https://gh.io/mit)
-
