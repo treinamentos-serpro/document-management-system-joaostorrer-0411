@@ -65,7 +65,7 @@ export default function UploadComponent({ disabled = false, onUpload }) {
         </div>
       )}
 
-      <p className="upload-hint">Tamanho máximo: 10 MB</p>
+      <p className="upload-hint">O servidor valida o tamanho máximo permitido.</p>
       {error && <p className="inline-error" role="alert">{error}</p>}
 
       <button className="primary-button" type="submit" disabled={!file || disabled || isUploading}>

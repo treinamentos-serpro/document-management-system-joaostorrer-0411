@@ -7,7 +7,17 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
   year: 'numeric',
 });
 
-export default function DocumentList({ documents, error, isLoading, owner }) {
+export default function DocumentList({
+  documents,
+  error,
+  hasMore,
+  isLoading,
+  isLoadingMore,
+  loadMoreError,
+  onLoadMore,
+  owner,
+  token,
+}) {
   if (isLoading) {
     return <p className="list-state" role="status">Carregando documentos…</p>;
   }
@@ -49,12 +59,18 @@ export default function DocumentList({ documents, error, isLoading, owner }) {
               <td className="muted-cell">{dateFormatter.format(new Date(document.uploadedAt))}</td>
               <td className="muted-cell">{formatFileSize(document.size)}</td>
               <td className="action-cell">
-                <DownloadButton document={document} owner={owner} />
+                <DownloadButton document={document} owner={owner} token={token} />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {hasMore && (
+        <button className="load-more-button" type="button" onClick={onLoadMore} disabled={isLoadingMore}>
+          {isLoadingMore ? 'Carregando…' : 'Carregar mais documentos'}
+        </button>
+      )}
+      {loadMoreError && <p className="list-error" role="alert">{loadMoreError}</p>}
     </div>
   );
 }

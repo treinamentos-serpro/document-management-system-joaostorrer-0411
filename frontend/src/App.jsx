@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DocumentList from './components/DocumentList.jsx';
 import UploadComponent from './components/UploadComponent.jsx';
 import { listDocuments, uploadDocument } from './services/documentsApi.js';
@@ -6,21 +6,30 @@ import './App.css';
 
 export default function App() {
   const [owner, setOwner] = useState(() => window.localStorage.getItem('dms.user') || 'usuario-demo');
+  const [token, setToken] = useState('');
   const [documents, setDocuments] = useState([]);
+  const [totalDocuments, setTotalDocuments] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [loadMoreError, setLoadMoreError] = useState('');
   const [notice, setNotice] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const loadMoreController = useRef(null);
 
   useEffect(() => {
     window.localStorage.setItem('dms.user', owner);
   }, [owner]);
 
   useEffect(() => {
+    loadMoreController.current?.abort();
+    setIsLoadingMore(false);
     const trimmedOwner = owner.trim();
     if (!trimmedOwner) {
       setDocuments([]);
+      setTotalDocuments(0);
       setLoadError('Informe um identificador de usuário para carregar os documentos.');
+      setLoadMoreError('');
       setIsLoading(false);
       return undefined;
     }
@@ -29,8 +38,12 @@ export default function App() {
     setIsLoading(true);
     setLoadError('');
 
-    listDocuments(trimmedOwner, { signal: controller.signal })
-      .then(setDocuments)
+    setLoadMoreError('');
+    listDocuments(trimmedOwner, { signal: controller.signal, token })
+      .then((result) => {
+        setDocuments(result.documents);
+        setTotalDocuments(result.pagination.total);
+      })
       .catch((error) => {
         if (error.name !== 'AbortError') {
           setLoadError(error.message);
@@ -43,18 +56,54 @@ export default function App() {
         }
       });
 
-    return () => controller.abort();
-  }, [owner, refreshKey]);
+    return () => {
+      controller.abort();
+      loadMoreController.current?.abort();
+    };
+  }, [owner, refreshKey, token]);
 
   async function handleUpload(file) {
-    const document = await uploadDocument(file, owner.trim());
+    const document = await uploadDocument(file, owner.trim(), token);
     setNotice(`${document.originalName} foi enviado.`);
     setRefreshKey((currentKey) => currentKey + 1);
   }
 
   function handleOwnerChange(event) {
     setOwner(event.target.value);
+    setDocuments([]);
+    setTotalDocuments(0);
     setNotice('');
+  }
+
+  function handleTokenChange(event) {
+    setToken(event.target.value);
+    setDocuments([]);
+    setTotalDocuments(0);
+    setNotice('');
+  }
+
+  async function handleLoadMore() {
+    const controller = new AbortController();
+    loadMoreController.current = controller;
+    setIsLoadingMore(true);
+    setLoadMoreError('');
+    try {
+      const result = await listDocuments(owner.trim(), {
+        signal: controller.signal,
+        token,
+        offset: documents.length,
+      });
+      setDocuments((currentDocuments) => [...currentDocuments, ...result.documents]);
+      setTotalDocuments(result.pagination.total);
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setLoadMoreError(error.message);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsLoadingMore(false);
+      }
+    }
   }
 
   return (
@@ -73,6 +122,16 @@ export default function App() {
             value={owner}
           />
         </label>
+        <label className="token-field">
+          <span>Token de acesso</span>
+          <input
+            autoComplete="off"
+            onChange={handleTokenChange}
+            placeholder="Opcional no modo local"
+            type="password"
+            value={token}
+          />
+        </label>
       </header>
 
       <main className="workspace" id="inicio">
@@ -83,8 +142,8 @@ export default function App() {
             <p className="page-subtitle">Arquivos organizados, prontos quando você precisar.</p>
           </div>
           <div className="document-total" aria-live="polite">
-            <span className="total-number">{isLoading ? '—' : documents.length}</span>
-            <span>{documents.length === 1 ? 'documento' : 'documentos'}</span>
+            <span className="total-number">{isLoading ? '—' : totalDocuments}</span>
+            <span>{totalDocuments === 1 ? 'documento' : 'documentos'}</span>
           </div>
         </section>
 
@@ -112,8 +171,13 @@ export default function App() {
             <DocumentList
               documents={documents}
               error={loadError}
+              hasMore={documents.length < totalDocuments}
               isLoading={isLoading}
+              isLoadingMore={isLoadingMore}
+              loadMoreError={loadMoreError}
+              onLoadMore={handleLoadMore}
               owner={owner.trim()}
+              token={token}
             />
           </section>
         </div>
