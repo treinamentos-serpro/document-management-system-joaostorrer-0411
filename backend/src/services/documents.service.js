@@ -1,18 +1,22 @@
 const crypto = require('node:crypto');
-const fs = require('node:fs/promises');
 const path = require('node:path');
+const config = require('../config/documentConfig');
+const AppError = require('../errors/appError');
 const documentsRepository = require('../repositories/documents.repository');
+const localFileRepository = require('../repositories/localFileRepository');
 
 async function createDocument(file, owner) {
   if (!file) {
-    throw createError(400, 'FILE_REQUIRED', 'Envie um arquivo no campo "file".');
+    throw new AppError('FILE_REQUIRED', 'Envie um arquivo no campo "file".');
   }
   if (file.size === 0) {
-    await documentsRepository.removeFile(file.path);
-    throw createError(400, 'FILE_REQUIRED', 'O arquivo enviado não pode estar vazio.');
+    await discardUploadedFile(file.path);
+    throw new AppError('FILE_REQUIRED', 'O arquivo enviado não pode estar vazio.');
   }
 
-  const originalName = path.win32.basename(path.basename(file.originalname)).slice(0, 255) || 'document';
+  const originalName = path.win32.basename(path.basename(file.originalname))
+    .replace(/[\u0000-\u001f\u007f]/g, '_')
+    .slice(0, 255) || 'document';
   const document = {
     id: crypto.randomUUID(),
     originalName,
@@ -24,53 +28,41 @@ async function createDocument(file, owner) {
   };
 
   try {
+    const storageUsage = await localFileRepository.getUsage();
+    if (storageUsage.fileCount > config.maxDocumentsTotal
+      || storageUsage.totalBytes > config.maxStorageBytesTotal) {
+      throw new AppError('STORAGE_QUOTA_EXCEEDED', 'O limite total de armazenamento foi atingido.');
+    }
     documentsRepository.save(document);
   } catch (error) {
-    await documentsRepository.removeFile(file.path);
+    await discardUploadedFile(file.path);
     throw error;
-  }
-
-  return toPublicDocument(document);
-}
-
-function listDocuments(owner, limit, offset) {
-  const result = documentsRepository.findByOwner(owner, limit, offset);
-  return {
-    documents: result.documents.map(toPublicDocument),
-    total: result.total,
-  };
-}
-
-async function getDocumentForDownload(id, owner) {
-  const document = documentsRepository.findById(id);
-  if (!document || document.owner !== owner) {
-    throw createError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
-  }
-
-  try {
-    await fs.access(document.storagePath);
-  } catch {
-    throw createError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
   }
 
   return document;
 }
 
-function toPublicDocument(document) {
-  return {
-    id: document.id,
-    originalName: document.originalName,
-    size: document.size,
-    uploadedAt: document.uploadedAt,
-    owner: document.owner,
-  };
+function listDocuments(owner, limit, offset) {
+  return documentsRepository.findByOwner(owner, limit, offset);
 }
 
-function createError(status, code, message) {
-  const error = new Error(message);
-  error.status = status;
-  error.code = code;
-  return error;
+async function discardUploadedFile(filePath) {
+  try {
+    await localFileRepository.remove(filePath);
+  } catch (error) {
+    console.error('Não foi possível remover um upload rejeitado:', error.message);
+  }
+}
+
+async function getDocumentForDownload(id, owner) {
+  const document = documentsRepository.findById(id);
+  if (!document || document.owner !== owner) {
+    throw new AppError('DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
+  }
+
+  await localFileRepository.assertAvailable(document.storagePath);
+
+  return document;
 }
 
 module.exports = { createDocument, getDocumentForDownload, listDocuments };

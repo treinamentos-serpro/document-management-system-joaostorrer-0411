@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { downloadDocument } from '../services/documentsApi.js';
 
-export default function DownloadButton({ document, owner }) {
+export default function DownloadButton({ document, owner, token }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState('');
 
@@ -9,7 +9,7 @@ export default function DownloadButton({ document, owner }) {
     setError('');
     setIsDownloading(true);
     try {
-      await downloadDocument(document, owner);
+      await downloadDocument(document, owner, token);
     } catch (downloadError) {
       setError(downloadError.message);
     } finally {

@@ -46,6 +46,7 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   min-height: 76px;
   padding: 0 max(6vw, 24px);
   color: #f6f9f5;
@@ -79,7 +80,8 @@ a:focus-visible {
   color: var(--coral);
 }
 
-.user-field {
+.user-field,
+.token-field {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -87,7 +89,8 @@ a:focus-visible {
   font-size: 12px;
 }
 
-.user-field input {
+.user-field input,
+.token-field input {
   width: 190px;
   height: 36px;
   padding: 0 11px;
@@ -97,7 +100,8 @@ a:focus-visible {
   background: rgba(0, 0, 0, 0.12);
 }
 
-.user-field input:focus-visible {
+.user-field input:focus-visible,
+.token-field input:focus-visible {
   outline-color: var(--leaf);
 }
 
@@ -374,6 +378,28 @@ a:focus-visible {
   overflow-x: auto;
 }
 
+.load-more-button {
+  min-height: 38px;
+  margin: 18px 0 0;
+  padding: 0 13px;
+  border: 1px solid #cad9ce;
+  border-radius: 4px;
+  color: var(--forest);
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.load-more-button:hover:not(:disabled) {
+  background: #eff7eb;
+}
+
+.load-more-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 .document-table {
   width: 100%;
   border-collapse: collapse;
@@ -558,15 +584,18 @@ a:focus-visible {
 
 @media (max-width: 760px) {
   .topbar {
+    flex-wrap: wrap;
     min-height: 68px;
-    padding: 0 20px;
+    padding: 14px 20px;
   }
 
-  .user-field {
+  .user-field,
+  .token-field {
     gap: 7px;
   }
 
-  .user-field > span {
+  .user-field > span,
+  .token-field > span {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -574,7 +603,8 @@ a:focus-visible {
     clip: rect(0, 0, 0, 0);
   }
 
-  .user-field input {
+  .user-field input,
+  .token-field input {
     width: min(42vw, 190px);
   }
 

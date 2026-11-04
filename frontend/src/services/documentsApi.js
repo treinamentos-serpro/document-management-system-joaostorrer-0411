@@ -16,23 +16,30 @@ async function ensureSuccess(response) {
   return response;
 }
 
-export async function listDocuments(owner, { signal } = {}) {
-  const response = await fetch(`${API_BASE}/documents?limit=100&offset=0`, {
-    headers: { 'X-User-Id': owner },
+function createHeaders(owner, token) {
+  const headers = { 'X-User-Id': owner };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+export async function listDocuments(owner, { signal, token, limit = 50, offset = 0 } = {}) {
+  const response = await fetch(`${API_BASE}/documents?limit=${limit}&offset=${offset}`, {
+    headers: createHeaders(owner, token),
     signal,
   });
   const body = await ensureSuccess(response);
-  const result = await body.json();
-  return result.documents;
+  return body.json();
 }
 
-export async function uploadDocument(file, owner) {
+export async function uploadDocument(file, owner, token) {
   const formData = new FormData();
   formData.append('file', file);
 
   const response = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
-    headers: { 'X-User-Id': owner },
+    headers: createHeaders(owner, token),
     body: formData,
   });
   const body = await ensureSuccess(response);
@@ -40,10 +47,10 @@ export async function uploadDocument(file, owner) {
   return result.document;
 }
 
-export async function downloadDocument(document, owner) {
+export async function downloadDocument(document, owner, token) {
   const response = await fetch(
     `${API_BASE}/documents/${encodeURIComponent(document.id)}/download`,
-    { headers: { 'X-User-Id': owner } }
+    { headers: createHeaders(owner, token) }
   );
   const body = await ensureSuccess(response);
   const objectUrl = URL.createObjectURL(await body.blob());
